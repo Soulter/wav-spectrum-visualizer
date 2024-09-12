@@ -2,6 +2,8 @@
 
 This is a simple tool(toy) that generates a spectrum visualization of a WAV file.
 
+Blog post(Chinese): [Here](https://blog.soulter.top/posts/visualize-music.html)
+
 ## Usage
 
 Install the required dependencies:
