@@ -37,7 +37,6 @@ def fft(x):
 
 def scale_spectrum(spectrum_complex, max_y):
     '''convert complex spectrum to real spectrum and scale it to fit the screen'''
-    max_y = int((max_y // 2) *  0.8)
     spectrum = [abs(freq) for freq in spectrum_complex]
     max_spectrum = max(max(spectrum), 1)
     return [int(max_y * math.sqrt(freq) / math.sqrt(max_spectrum)) for freq in spectrum]
@@ -48,14 +47,28 @@ def draw_spectrum(stdscr, spectrum: list[list[int]], max_y: int):
     half_y = max_y // 2
 
     for i, freq in enumerate(spectrum[0]):
-        for j in range(freq):
-            stdscr.addstr(half_y - j, i, "█", curses.color_pair(colors[j]))
+        full_1 = freq // len(blocks)
+        full_2 = spectrum[1][i] // len(blocks)
+        left_1 = freq % len(blocks)
+        left_2 = spectrum[1][i] % len(blocks)
+        
+        # draw the full blocks
+        for j in range(full_1):
+            stdscr.addstr(half_y - j, i, blocks[-1], curses.color_pair(colors[j]))
             if len(spectrum) == 1:
                 # if the audio file only has one channel, draw the same spectrum for the other channel
-                stdscr.addstr(half_y + j, i, "█", curses.color_pair(colors[j]))
+                stdscr.addstr(half_y + j, i, blocks[-1], curses.color_pair(colors[j]))
                 continue
-        for j in range(spectrum[1][i]):
-            stdscr.addstr(half_y + j, i, "█", curses.color_pair(colors[j]))
+        for j in range(full_2):
+            stdscr.addstr(half_y + j, i, blocks[-1], curses.color_pair(colors[j]))
+        
+        # draw the left blocks
+        if left_1 > 0:
+            stdscr.addstr(half_y - full_1, i, blocks[left_1], curses.color_pair(colors[full_1]))
+            if len(spectrum) == 1:
+                stdscr.addstr(half_y + full_1, i, blocks[left_1], curses.color_pair(colors_reverse[full_1]))
+        if left_2 > 0:
+            stdscr.addstr(half_y + full_2, i, blocks[left_2], curses.color_pair(colors_reverse[full_2]))
 
 def play_audio(file_name):
     wave_obj = sa.WaveObject.from_wave_file(file_name)
@@ -64,23 +77,34 @@ def play_audio(file_name):
     
 def init_colors():
     curses.start_color()
-    curses.init_pair(1, curses.COLOR_CYAN, 1)
-    curses.init_pair(2, curses.COLOR_WHITE, 1)
-    curses.init_pair(3, curses.COLOR_GREEN, 1)
-    curses.init_pair(4, curses.COLOR_YELLOW, 1)
+    curses.init_pair(1, curses.COLOR_CYAN, curses.COLOR_BLACK)
+    curses.init_pair(2, curses.COLOR_WHITE, curses.COLOR_BLACK)
+    curses.init_pair(3, curses.COLOR_GREEN, curses.COLOR_BLACK)
+    curses.init_pair(4, curses.COLOR_YELLOW, curses.COLOR_BLACK)
+    
+    curses.init_pair(5, curses.COLOR_BLACK, curses.COLOR_CYAN)
+    curses.init_pair(6, curses.COLOR_BLACK, curses.COLOR_WHITE)
+    curses.init_pair(7, curses.COLOR_BLACK, curses.COLOR_GREEN)
+    curses.init_pair(8, curses.COLOR_BLACK, curses.COLOR_YELLOW)
     
 def adjust_colors(max_y):
-    global colors
-    max_y = max_y // 2
+    global colors, colors_reverse
+    max_y = int (max_y / 2 * 0.8)
+    colors = []
+    colors_reverse = []
     for i in range(max_y+1):
         if i / max_y <= 0.25:
             colors.append(1)
+            colors_reverse.append(5)
         elif i / max_y <= 0.45:
             colors.append(2)
+            colors_reverse.append(6)
         elif i / max_y <= 0.65:
             colors.append(3)
+            colors_reverse.append(7)
         else:
             colors.append(4)
+            colors_reverse.append(8)
             
 def ema(alpha_down: float, alpha_up: float, prev: list, curr: list):
     '''Exponential Moving Average'''
@@ -100,7 +124,7 @@ def main(stdscr):
     init_colors()
     file_name = args.parse_args().file
     frame_size = 2048
-    hop_size = 1024
+    hop_size = 1600
     
     # The EMA alpha. Means the weight of the **previous** spectrum.
     ema_alpha_down = 0.93 # when previous value > current value
@@ -118,6 +142,7 @@ def main(stdscr):
     
     previous_spectrum = None # the previous spectrum
     last_max_y, _ = stdscr.getmaxyx() # the last max y of the terminal window
+    last_scale_max_val = int((last_max_y * len(blocks) // 2) * 0.8)
     adjust_colors(last_max_y)
     
     for i in range(0, len(data[0]) - frame_size, hop_size):
@@ -128,10 +153,11 @@ def main(stdscr):
         if max_y != last_max_y:
             adjust_colors(max_y)
             last_max_y = max_y
+            last_scale_max_val = int((max_y * len(blocks) // 2) * 0.8)
         
         spectrum = [] # len(fft_data) == channel num
         for channel_idx in range(len(data)):
-            spectrum.append(scale_spectrum(fft(data[channel_idx][i:i + frame_size])[:max_x], max_y))
+            spectrum.append(scale_spectrum(fft(data[channel_idx][i:i + frame_size])[:max_x], last_scale_max_val))
 
         # apply EMA
         if previous_spectrum is not None:
@@ -158,6 +184,8 @@ def main(stdscr):
     audio_thread.join()
 
 if __name__ == "__main__":
+    blocks = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█']
+    
     args = argparse.ArgumentParser()
     # wav file path
     args.add_argument('-f', '--file', help='wav file path', type=str)
@@ -165,4 +193,5 @@ if __name__ == "__main__":
     args.add_argument('--no-audio', help='don\'t play audio', action='store_true')
     
     colors = []
+    colors_reverse = []
     curses.wrapper(main)
