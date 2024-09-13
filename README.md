@@ -1,6 +1,6 @@
 # WAV Spectrum Visualizer
 
-This is a simple tool(toy) that generates a spectrum visualization of a WAV file.
+This is a simple tool(toy) that generates a spectrum visualization of a WAV file. Inspired by `ncmpcpp`'s spectrum visualizer.
 
 Blog post(Chinese): [Here](https://blog.soulter.top/posts/visualize-music.html)
 
