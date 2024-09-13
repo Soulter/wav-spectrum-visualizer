@@ -11,7 +11,6 @@ import simpleaudio as sa
 def read_wav_file(file_name):
     with wave.open(file_name, 'rb') as wf:
         num_channels = wf.getnchannels()
-        sample_width = wf.getsampwidth()
         frame_rate = wf.getframerate()
         num_frames = wf.getnframes()
         
@@ -20,10 +19,11 @@ def read_wav_file(file_name):
         fmt = f"<{total_samples}h"
 
         data = struct.unpack(fmt, raw_data)
-        # only use one channel
-        data = [data[i] for i in range(0, len(data), num_channels)]
+        parsed_data = []
+        for i in range(num_channels):
+            parsed_data.append(data[i::num_channels])
 
-    return data, frame_rate
+    return parsed_data, frame_rate
 
 def fft(x):
     N = len(x)
@@ -42,17 +42,21 @@ def scale_spectrum(spectrum_complex, max_y):
     max_spectrum = max(max(spectrum), 1)
     return [int(max_y * math.sqrt(freq) / math.sqrt(max_spectrum)) for freq in spectrum]
 
-
-def draw_spectrum(stdscr, spectrum: list[int], max_y: int):
+def draw_spectrum(stdscr, spectrum: list[list[int]], max_y: int):
     global colors
     stdscr.clear()
     half_y = max_y // 2
 
-    for i, freq in enumerate(spectrum):
+    for i, freq in enumerate(spectrum[0]):
         for j in range(freq):
             stdscr.addstr(half_y - j, i, "█", curses.color_pair(colors[j]))
+            if len(spectrum) == 1:
+                # if the audio file only has one channel, draw the same spectrum for the other channel
+                stdscr.addstr(half_y + j, i, "█", curses.color_pair(colors[j]))
+                continue
+        for j in range(spectrum[1][i]):
             stdscr.addstr(half_y + j, i, "█", curses.color_pair(colors[j]))
-    
+
 def play_audio(file_name):
     wave_obj = sa.WaveObject.from_wave_file(file_name)
     play_obj = wave_obj.play()
@@ -69,23 +73,27 @@ def adjust_colors(max_y):
     global colors
     max_y = max_y // 2
     for i in range(max_y+1):
-        if i / max_y <= 0.2:
+        if i / max_y <= 0.25:
             colors.append(1)
-        elif i / max_y <= 0.4:
+        elif i / max_y <= 0.45:
             colors.append(2)
-        elif i / max_y <= 0.6:
+        elif i / max_y <= 0.65:
             colors.append(3)
         else:
             colors.append(4)
             
-def ema(alpha, prev, curr):
+def ema(alpha_down: float, alpha_up: float, prev: list, curr: list):
+    '''Exponential Moving Average'''
     new = []
     for i in range(len(curr)):
         if i >= len(prev):
             # dynamically adjust the size of terminal window may cause the length of prev and curr to be different
             new.append(int(curr[i])) 
         else:
-            new.append(int((1 - alpha) * prev[i] + alpha * curr[i]))
+            if prev[i] > curr[i]:
+                new.append(int(alpha_down * prev[i] + (1 - alpha_down) * curr[i]))
+            else:
+                new.append(int(alpha_up * prev[i] + (1 - alpha_up) * curr[i]))
     return new
 
 def main(stdscr):
@@ -93,12 +101,14 @@ def main(stdscr):
     file_name = args.parse_args().file
     frame_size = 2048
     hop_size = 1024
-    ema_alpha = 0.4 # the alpha value for EMA
-    fps = 40
+    
+    # The EMA alpha. Means the weight of the **previous** spectrum.
+    ema_alpha_down = 0.93 # when previous value > current value
+    ema_alpha_up = 0.2 # when previous value <= current value
 
     data, frame_rate = read_wav_file(file_name)
     frame_duration = hop_size / frame_rate  # the duration of each `render frame``
-    total_duration = len(data) / frame_rate  # the total duration of the audio
+    total_duration = len(data[0]) / frame_rate  # the total duration of the audio
     
     if not args.parse_args().no_audio:
         audio_thread = threading.Thread(target=play_audio, args=(file_name,))
@@ -110,11 +120,7 @@ def main(stdscr):
     last_max_y, _ = stdscr.getmaxyx() # the last max y of the terminal window
     adjust_colors(last_max_y)
     
-    cached_list = []
-    ideal_frame_time = 1 / fps
-    cached_size = max(ideal_frame_time // frame_duration, 1)
-    
-    for i in range(0, len(data) - frame_size, hop_size):
+    for i in range(0, len(data[0]) - frame_size, hop_size):
         start_time = time.time()
         
         # adjust the color when the terminal window size changes
@@ -123,25 +129,23 @@ def main(stdscr):
             adjust_colors(max_y)
             last_max_y = max_y
         
-        spectrum = scale_spectrum(fft(data[i:i + frame_size])[:max_x], max_y)
+        spectrum = [] # len(fft_data) == channel num
+        for channel_idx in range(len(data)):
+            spectrum.append(scale_spectrum(fft(data[channel_idx][i:i + frame_size])[:max_x], max_y))
+
+        # apply EMA
+        if previous_spectrum is not None:
+            for channel_idx in range(len(spectrum)):
+                spectrum[channel_idx] = ema(ema_alpha_down, 
+                                            ema_alpha_up, 
+                                            previous_spectrum[channel_idx], 
+                                            spectrum[channel_idx])
+        # render the spectrum
+        draw_spectrum(stdscr, spectrum, max_y)
         
-        if len(cached_list) >= cached_size:
-            # average the cached spectrum
-            spectrum = [sum(x) // len(x) for x in zip(*cached_list)]
-            cached_list = []
-        
-            # apply EMA
-            if previous_spectrum is not None:
-                spectrum = ema(ema_alpha, previous_spectrum, spectrum)
-            # render the spectrum
-            draw_spectrum(stdscr, spectrum, max_y)
-            
-            previous_spectrum = spectrum
-        else:
-            cached_list.append(spectrum)
+        previous_spectrum = spectrum
         
         elapsed_time = time.time()
-        
         _render_time = elapsed_time - start_time
         _frame_time = i / frame_rate
         _actual_frame_time = elapsed_time - play_start_time
