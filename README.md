@@ -1,4 +1,4 @@
-# WAV Spectrum Visualizer
+# WAV Spectrum Visualizer (Python)
 
 This is a simple tool(toy) that generates a spectrum visualization of a WAV file. Inspired by `ncmpcpp`'s spectrum visualizer.
 
