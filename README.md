@@ -4,6 +4,11 @@ This is a simple tool(toy) that generates a spectrum visualization of a WAV file
 
 Blog post(Chinese): [Here](https://blog.soulter.top/posts/visualize-music.html)
 
+
+## Demo
+
+https://github.com/user-attachments/assets/7ba1eb42-50de-40d0-8e30-187a6bc229a5
+
 ## Usage
 
 Install the required dependencies:
