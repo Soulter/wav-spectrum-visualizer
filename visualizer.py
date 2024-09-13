@@ -47,8 +47,8 @@ def draw_spectrum(stdscr, spectrum: list[list[int]], max_y: int):
     half_y = max_y // 2
 
     for i, freq in enumerate(spectrum[0]):
-        full_1 = freq // len(blocks)
-        full_2 = spectrum[1][i] // len(blocks)
+        full_1 = min(freq // len(blocks), len(colors))
+        full_2 = min(spectrum[1][i] // len(blocks), len(colors))
         left_1 = freq % len(blocks)
         left_2 = spectrum[1][i] % len(blocks)
         
@@ -64,11 +64,11 @@ def draw_spectrum(stdscr, spectrum: list[list[int]], max_y: int):
         
         # draw the left blocks
         if left_1 > 0:
-            stdscr.addstr(half_y - full_1, i, blocks[left_1], curses.color_pair(colors[full_1]))
+            stdscr.addstr(half_y - full_1, i, blocks[left_1], curses.color_pair(colors[full_1-1]))
             if len(spectrum) == 1:
-                stdscr.addstr(half_y + full_1, i, blocks[left_1], curses.color_pair(colors_reverse[full_1]))
+                stdscr.addstr(half_y + full_1, i, blocks[left_1], curses.color_pair(colors_reverse[full_1-1]))
         if left_2 > 0:
-            stdscr.addstr(half_y + full_2, i, blocks[left_2], curses.color_pair(colors_reverse[full_2]))
+            stdscr.addstr(half_y + full_2, i, blocks[left_2], curses.color_pair(colors_reverse[full_2-1]))
 
 def play_audio(file_name):
     wave_obj = sa.WaveObject.from_wave_file(file_name)
